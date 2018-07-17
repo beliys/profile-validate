@@ -56,7 +56,7 @@ while getopts ":g:b:vmh" opt; do
   esac
 done
 
-mail() {
+sendmail() {
 if [[ -n $email ]]; then
 echo "Regrettably, one or more of the isoprofiles you maintain are currently broken. 
 
@@ -126,7 +126,7 @@ test_profile() {
 "
         echo "$profile" >> /tmp/failed_profiles
         source $(echo $PROFILES/*/$profile/profile.conf)
-        mail
+        $mail && sendmail
     else
         rm /tmp/fails-$profile
         $verbose && echo -e "Profile \e[36m$profile\e[0m passed the test
