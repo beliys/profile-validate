@@ -1,0 +1,192 @@
+#!/usr/sbin/env bash
+
+
+usage() {
+    echo "usage: ${0##*/} [options]"
+    echo " -g git-branch  Use an alternate git branch for iso-profiles to test"
+    echo " -v             Print verbose information"
+    echo " -m             Mail the maintainers of broken profiles"
+    echo " -b branch      Select the pacman branch to test with"
+    echo " -h             Print this help message"
+    echo ''
+    echo ' profile-validate test the current iso-profiles to ensure that they work with manjaro-architect.'
+    echo ' If no git branch is given, it defaults to the manjaro-architect branch.'
+    echo ''
+    echo ''
+    exit $1
+}
+
+verbose=false
+mail=false
+pkgs_target=/tmp/package_list
+PROFILES="/tmp/profiles"
+branch=manjaro-architect
+while getopts ":g:b:vmh" opt; do
+  case $opt in
+    g)
+      echo "Using the git branch: $OPTARG" >&2
+      branch=$OPTARG
+      bswitch=1
+      ;;
+    v)
+      verbose=true
+      ;;
+    m)
+      mail=true
+      ;;
+    b)
+      echo "Using the git branch: $OPTARG" >&2
+      pbranch=$OPTARG
+      ;;
+    h)
+      usage
+      exit 0
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      usage
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires git branch as an argument." >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+mail() {
+if [[ -n $email ]]; then
+echo "Regrettably, one or more of the isoprofiles you maintain are currently broken. 
+
+Currently, $profile contains these packages, which are not currently in the repos: 
+$(cat /tmp/fails-$profile )" | mail -s "Iso-profile broken" "$email"
+else
+echo "Regrettably, one or more of the isoprofiles you maintain are currently broken. 
+
+Currently, $profile contains these packages, which are not currently in the repos: 
+$(cat /tmp/fails-$profile )" | mail -s "Iso-profile broken" "manjaro-dev@manjaro.org"
+fi
+}
+filter_packages() {
+        # Parse package list based on user input and remove parts that don't belong to pacman
+        cat "$pkgs_src" > $pkgs_target
+        
+        # Remove any packages tagged with >openrc and remove >systemd tags
+        sed -i '/>openrc/d' $pkgs_target
+        sed -i 's/>systemd //g' $pkgs_target
+
+        # Remove any packages tagged with >i686 and remove >x86_64 tags
+        sed -i '/>i686/d' $pkgs_target
+        sed -i '/>nonfree_i686/d' $pkgs_target
+        sed -i 's/>x86_64 //g' $pkgs_target
+
+        # Remove >multilib tags
+        sed -i 's/>multilib //g' $pkgs_target
+        sed -i 's/>nonfree_multilib //g' $pkgs_target
+
+        if [[ -e /tmp/.minimal ]]; then
+            # Remove >extra tags
+            sed -i 's/>basic //g' $pkgs_target
+            sed -i '/>extra/d' $pkgs_target
+        else
+            # Remove >basic tags
+            sed -i 's/>extra //g' $pkgs_target
+            sed -i '/>basic/d' $pkgs_target
+        fi
+        # remove >manjaro flags and >sonar flags+pkgs until we support it properly
+        sed -i '/>sonar/d' $pkgs_target
+        sed -i 's/>manjaro //g' $pkgs_target
+
+        # Remove commented lines
+        # remove everything except the first word of every lines
+        sed -i 's/\s.*$//' $pkgs_target
+        # Remove lines with #
+        sed -i '/#/d' $pkgs_target
+        # remove KERNEL variable
+        sed -i '/KERNEL/d' $pkgs_target
+        # Remove empty lines
+        sed -i '/^\s*$/d' $pkgs_target
+
+        # Remove packages that have been dropped from repos
+        grep -f /tmp/.available_packages $pkgs_target > /tmp/.tmp
+        mv /tmp/.tmp $pkgs_target
+}
+
+test_profile() {
+    pkgs_src="$(echo $PROFILES/*/$profile/Packages-Desktop)"
+    filter_packages
+    $verbose && echo "Testing profile $profile"
+    comm -23 <(sort -u "$pkgs_target") <(grep -v -e ”\" -e "\/" -e "\:" -e "pkgname" /tmp/.available_packages | sort -u) > /tmp/fails-$profile
+    if [[ "$(cat /tmp/fails-$profile | wc -l)" -gt 0 ]]; then
+        echo -e "Profile \e[31m$profile\e[0m did not pass the test."
+        echo -e "The offending packages are: 
+        \e[31m$(cat /tmp/fails-$profile)\e[0m
+"
+        echo "$profile" >> /tmp/failed_profiles
+        source $(echo $PROFILES/*/$profile/profile.conf)
+        mail
+    else
+        rm /tmp/fails-$profile
+        $verbose && echo -e "Profile \e[36m$profile\e[0m passed the test
+"
+    fi
+    
+}
+
+loop_profiles() {
+    for profile in $(echo $PROFILES/{manjaro,community}/* | xargs -n1 | cut -f5 -d'/' | grep -vE "netinstall|architect"); do
+        profile_to_test="$profile"
+        test_profile
+    done
+}
+
+
+setup_profiles() {
+        if [[ -e $PROFILES ]]; then
+            $verbose && echo "updating isoprofiles"
+            if $verbose; then
+                git -C $PROFILES pull
+            else
+                git -C $PROFILES pull &> /dev/null
+            fi
+        else
+            $verbose && echo "pulling isoprofiles"
+            if $verbose; then 
+                git clone -b $branch --depth 1 https://gitlab.manjaro.org/profiles-and-settings/iso-profiles.git $PROFILES
+            else
+                git clone -b $branch --depth 1 https://gitlab.manjaro.org/profiles-and-settings/iso-profiles.git $PROFILES &>dev-null
+            fi
+        fi
+        
+        $verbose && echo "
+        "
+}
+
+list_available_pgs() {
+    cat <(pacman -Ssq) <(pacman -Sgq) <(expac "%S" -Ss | xargs -n1) | sort | uniq > /tmp/.available_packages
+}
+
+main() {
+    list_available_pgs 
+    setup_profiles
+    loop_profiles
+    if [[ "$(cat /tmp/failed_profiles | wc -l 2> /dev/null)" -gt 0 ]]; then
+    echo -e "
+--------------
+Following profiles failed the test:
+\e[31m$(cat /tmp/failed_profiles | sort | uniq)\e[0m"
+
+echo "Failed iso-profiles:
+$(cat /tmp/failed_profiles | sort | uniq)" | mail -s "Iso-profile broken" -f "support@manjaro.org" "manjaro-dev@manjaro.org" 
+rm /tmp/failed_profiles
+exit 1
+fi
+rm /tmp/failed_profiles
+}
+
+if [[ $bswitch == 1 ]]; then
+   rm -rf $PROFILES
+fi
+
+main 
