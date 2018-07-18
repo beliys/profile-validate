@@ -16,9 +16,9 @@ usage() {
     exit $1
 }
 
-bswitch=false
 verbose=false
 mail=false
+bswitch=false
 pkgs_target=/tmp/package_list
 PROFILES="/tmp/profiles"
 branch=manjaro-architect
@@ -27,7 +27,7 @@ while getopts ":g:b:vmh" opt; do
     g)
       echo "Using the git branch: $OPTARG" >&2
       branch=$OPTARG
-      bswitch=true
+      bswitch=1
       ;;
     v)
       verbose=true
@@ -178,16 +178,18 @@ main() {
 Following profiles failed the test:
 \e[31m$(cat /tmp/failed_profiles | sort | uniq)\e[0m"
 
-echo "Failed iso-profiles:
-$(cat /tmp/failed_profiles | sort | uniq)" | mail -s "Iso-profile broken" "manjaro-dev@manjaro.org" 
+$mail && echo "Failed iso-profiles:
+$(cat /tmp/failed_profiles | sort | uniq)" | mail -s "Iso-profile broken" "manjaro-dev@manjaro.org" &
 rm /tmp/failed_profiles
 exit 1
 fi
 rm /tmp/failed_profiles
 }
 
-if $bswitch; then
+if $bswitch ; then
    rm -rf $PROFILES
 fi
 
 main 
+
+
