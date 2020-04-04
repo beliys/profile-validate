@@ -86,8 +86,8 @@ filter_packages() {
         sed -i 's/>multilib //g' $pkgs_target
         sed -i 's/>nonfree_multilib //g' $pkgs_target
 
-        sed -i 's/>basic //g' $pkgs_target
-        sed -i '/>extra/d' $pkgs_target
+        sed -i 's/>extra //g' $pkgs_target
+        sed -i '/>basic/d' $pkgs_target
 
         # Remove commented lines
         # remove everything except the first word of every lines
