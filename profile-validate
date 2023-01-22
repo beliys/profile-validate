@@ -22,7 +22,7 @@ mail=false
 bswitch=false
 pkgs_target=/tmp/package_list
 PROFILES="/tmp/profiles"
-branch=manjaro-architect
+branch=master
 filter=false
 while getopts ":g:b:vmrh" opt; do
   case $opt in
