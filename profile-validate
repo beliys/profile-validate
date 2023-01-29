@@ -11,7 +11,7 @@ usage() {
     echo " -h             Print this help message"
     echo ''
     echo ' profile-validate test the current iso-profiles to ensure that they work with manjaro-architect.'
-    echo ' If no git branch is given, it defaults to the manjaro-architect branch.'
+    echo ' If no git branch is given, it defaults to the master branch.'
     echo ''
     echo ''
     exit $1
